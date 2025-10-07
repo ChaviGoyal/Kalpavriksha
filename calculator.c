@@ -2,85 +2,139 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 
-int value_stack[256];
-char op_stack[256];
-int num_top = -1, op_top = -1;
+#define SIZE 100
 
-int get_op_priority(char op) {
-    return (op == '*' || op == '/') ? 2 : 1;
+int isOperator(char c) {
+    return (c == '+' || c == '-' || c == '*' || c == '/');
 }
 
-void calculate(char* expr) {
-    char* p = expr;
-    int error_flag  = 0; // 0=OK, 1=Invalid, 2=Div by Zero
-
-    while (*p && !error_flag ) {
-        if (isspace((char)*p)) {
-            p++; // Skipping whitespace
-            continue;
-        }
-
-        // If current letter is a number, parse and push to the value_stack stack
-        if (isdigit((char)*p)) {
-            value_stack[++num_top] = strtol(p, (char**)&p, 10);
-            continue;
-        }
-
-        while (op_top > -1 && get_op_priority(op_stack[op_top]) >= get_op_priority(*p)) {
-            if (num_top < 1) { error_flag  = 1; break; }
-            int val2 = value_stack[num_top--];
-            int val1 = value_stack[num_top--];
-            char op = op_stack[op_top--];
-
-            if (op == '/' && val2 == 0) { error_flag  = 2; break; }
-            if (op == '+') value_stack[++num_top] = val1 + val2;
-            if (op == '-') value_stack[++num_top] = val1 - val2;
-            if (op == '*') value_stack[++num_top] = val1 * val2;
-            if (op == '/') value_stack[++num_top] = val1 / val2;
-        }
-
-        if (strchr("+-*/", *p)) {
-            op_stack[++op_top] = *p++;
-        } else {
-            error_flag  = 1; // Invalid character
-        }
+int checkOverflow(long long value, int *err) {
+    if (value > INT_MAX || value < INT_MIN) {
+        *err = 3; //integer overflow
+        return 0;
     }
-
-    while (op_top > -1 && !error_flag ) {
-        if (num_top < 1) { error_flag  = 1; break; }
-        int val2 = value_stack[num_top--];
-        int val1 = value_stack[num_top--];
-        char op = op_stack[op_top--];
-        
-        if (op == '/' && val2 == 0) { error_flag  = 2; break; }
-        if (op == '+') value_stack[++num_top] = val1 + val2;
-        if (op == '-') value_stack[++num_top] = val1 - val2;
-        if (op == '*') value_stack[++num_top] = val1 * val2;
-        if (op == '/') value_stack[++num_top] = val1 / val2;
-    }
-
-    if (error_flag  == 1 || num_top != 0 || op_top != -1) {
-        printf("Error: Invalid expression.\n");
-    } else if (error_flag  == 2) {
-        printf("Error: Division by zero.\n");
-    } else {
-        printf("%d\n", value_stack[0]);
-    }
+    return (int)value;
 }
 
+int solve(char *exp, int *err) {
+    int nums[SIZE], numCount = 0;
+    char operatorList[SIZE];
+    int opCount = 0;
+    int i = 0, j = 0, k;
+    char last = '\0';
 
+    while (exp[i] != '\0') {
+        if (exp[i] == ' ') { 
+		i++; 
+		continue; 
+		}
+
+        if (isdigit(exp[i])) {
+            long long x = 0;
+            while (isdigit(exp[i])) {
+                x = x * 10 + (exp[i] - '0');
+                if (x > INT_MAX) {
+				*err = 3; 
+				return 0; 
+				} 
+                i++;
+            }
+            nums[numCount++] = (int)x;
+            last = 'n';
+        }
+
+        else if (isOperator(exp[i])) {
+            int look = i + 1;
+            while (exp[look] == ' ') 
+			look++;
+            if (exp[look] == '\0' || !isdigit(exp[look])) {
+                *err = 2; 
+				return 0;
+            }
+            operatorList[opCount++] = exp[i];
+            last = exp[i];
+            i++;
+        }
+
+        else {
+            *err = 2;
+            return 0;
+        }
+    }
+
+    if (last != 'n') { 
+	*err = 2;
+	return 0;
+	}
+	
+    // Handle * and /
+    while (j < opCount) {
+        if (operatorList[j] == '*' || operatorList[j] == '/') {
+            long long temp;
+            if (operatorList[j] == '/') {
+                if (nums[j + 1] == 0) { 
+				*err = 1;
+				return 0; 
+				}
+                if (nums[j] == INT_MIN && nums[j + 1] == -1) { 
+				*err = 3;
+				return 0;
+				}
+                temp = (long long)nums[j] / nums[j + 1];
+            } 
+			else {
+                temp = (long long)nums[j] * nums[j + 1];
+            }
+            nums[j] = checkOverflow(temp, err);
+            if (*err != 0) 
+			return 0;
+
+            for (k = j + 1; k < numCount - 1; k++) 
+			nums[k] = nums[k + 1];
+            for (k = j; k < opCount - 1; k++) 
+			operatorList[k] = operatorList[k + 1];
+            numCount--;
+            opCount--;
+        } 
+		else j++;
+    }
+
+    // Handle + and -
+    long long ans = nums[0];
+    for (j = 0; j < opCount; j++) {
+        if (operatorList[j] == '+')
+            ans += nums[j + 1];
+        else
+            ans -= nums[j + 1];
+
+        if (ans > INT_MAX || ans < INT_MIN) { 
+		*err = 3; 
+	    return 0; 
+		}
+    }
+
+    return (int)ans;
+}
 
 int main() {
-    char userInput[1024];
-    if (fgets(userInput, sizeof(userInput), stdin)) {
-        int len = strlen(userInput);
-        if (len > 0 && userInput[len - 1] == '\n') {
-            userInput[len - 1] = '\0';
-        }
+    char exp[SIZE];
+    printf("Enter expression: ");
+    fgets(exp, SIZE, stdin);
+    exp[strcspn(exp, "\n")] = '\0';
 
-        calculate(userInput);
+    int err = 0;
+    int res = solve(exp, &err);
+
+    if (err == 1) {
+        printf("Error: Division is by zero.\n");
+    } else if (err == 2) {
+        printf("Error: Invalid expression.\n");
+    } else if (err == 3) {
+        printf("Error: Integer overflow.\n");
+    } else {
+        printf("%d\n", res);
     }
-    
     return 0;
 }
