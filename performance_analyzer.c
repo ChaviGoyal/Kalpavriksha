@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdlib.h> /* for NULL and malloc if needed, memmove is in string.h */
-
+#include <stdlib.h> 
 #define MAX_STUDENTS 100
 #define NUM_SUBJECTS 3
 #define MAX_NAME_LEN 50
@@ -153,7 +152,6 @@ void getValidMarksForStudent(int marks[]) {
     }
 }
 
-/* ---------- Small helpers ---------- */
 
 int isValidName(const char *name) {
     for (int i = 0; name[i] != '\0'; i++) {
@@ -167,26 +165,26 @@ int isPositiveInt(int num) {
     return num > 0;
 }
 
-/* Remove leading and trailing whitespace in-place */
+
 void trimSpaces(char *str) {
     if (str == NULL) return;
 
     int start = 0;
     int end = (int)strlen(str) - 1;
 
-    /* remove trailing newline if present (from fgets) */
+  
     if (end >= 0 && str[end] == '\n') {
         str[end] = '\0';
         end--;
     }
 
-    /* remove trailing spaces */
+    
     while (end >= 0 && isspace((unsigned char)str[end])) {
         str[end] = '\0';
         end--;
     }
 
-    /* find first non-space */
+    
     while (str[start] != '\0' && isspace((unsigned char)str[start])) {
         start++;
     }
@@ -196,7 +194,7 @@ void trimSpaces(char *str) {
     }
 }
 
-/* ---------- Business logic (unchanged) ---------- */
+
 
 int calcTotal(int marks[]) {
     int total = 0;
@@ -229,7 +227,6 @@ void showStars(char grade) {
     for (int i = 0; i < stars; i++) putchar('*');
 }
 
-/* ---------- Sorting & recursive print ---------- */
 
 void sortRollNumbers(int rollNumbers[], int n) {
     for (int i = 0; i < n - 1; i++) {
