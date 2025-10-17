@@ -14,7 +14,8 @@ struct Student {
 
 /* Function prototypes */
 int getValidStudentCount(void);
-int getValidRollNumber(void);
+int getValidRollNumber(int existingRolls[], int count);
+
 void getValidStudentName(char *name, size_t size);
 void getValidMarksForStudent(int marks[]);
 int isValidName(const char *name);
@@ -35,13 +36,16 @@ int main(void) {
     int rollNumbers[MAX_STUDENTS];
 
     /* Student details input */
-    for (int studentIndex = 0; studentIndex < studentCount; studentIndex++) {
-        printf("\nEnter details for student %d\n", studentIndex + 1);
+   for (int studentIndex = 0; studentIndex < studentCount; studentIndex++) {
+    printf("\nEnter details for student %d\n", studentIndex + 1);
 
-        students[studentIndex].rollNo = getValidRollNumber();
-        getValidStudentName(students[studentIndex].name, sizeof(students[studentIndex].name));
-        getValidMarksForStudent(students[studentIndex].marks);
-    }
+    students[studentIndex].rollNo = getValidRollNumber(rollNumbers, studentIndex);
+    rollNumbers[studentIndex] = students[studentIndex].rollNo;
+
+    getValidStudentName(students[studentIndex].name, sizeof(students[studentIndex].name));
+    getValidMarksForStudent(students[studentIndex].marks);
+}
+
 
     /* Output section */
     printf("\n--- Student Report ---\n");
@@ -97,19 +101,35 @@ int getValidStudentCount(void) {
     }
 }
 
-int getValidRollNumber(void) {
+int getValidRollNumber(int existingRolls[], int count) {
     int roll;
+
     while (1) {
         printf("Roll No: ");
         if (scanf("%d", &roll) != 1 || !isPositiveInt(roll)) {
             printf("Invalid roll number! Please enter a positive integer.\n");
-            while (getchar() != '\n'); /* clear */
+            while (getchar() != '\n'); // clear invalid input
             continue;
         }
-        while (getchar() != '\n'); /* consume newline */
-        return roll;
+
+        // Check for duplicate roll numbers
+        int duplicate = 0;
+        for (int i = 0; i < count; i++) {
+            if (existingRolls[i] == roll) {
+                printf(" Roll number already exists! Enter a unique one.\n");
+                duplicate = 1;
+                break;
+            }
+        }
+
+        while (getchar() != '\n'); // consume trailing newline
+
+        if (!duplicate) {
+            return roll; // valid and unique → return it
+        }
     }
 }
+
 
 void getValidStudentName(char *name, size_t size) {
     while (1) {
