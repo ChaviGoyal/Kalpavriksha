@@ -209,10 +209,10 @@ float calcAverage(int total) {
 
 char calcGrade(float avg) {
     if (avg >= 85) return 'A';
-    else if (avg >= 70) return 'B';
-    else if (avg >= 50) return 'C';
-    else if (avg >= 35) return 'D';
-    else return 'F';
+     if (avg >= 70) return 'B';
+     if (avg >= 50) return 'C';
+     if (avg >= 35) return 'D';
+     return 'F';
 }
 
 void showStars(char grade) {
