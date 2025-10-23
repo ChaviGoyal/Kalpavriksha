@@ -70,21 +70,21 @@ void printMatrix(int *matrix, int size, const char *title) {
 
 // Rotate matrix 90° clockwise in-place using pointers
 void rotateMatrix90Clockwise(int *matrix, int size) {
-    for (int layer = 0; layer < size / 2; layer++) {
-        for (int element = layer; element < size - layer - 1; element++) {
-            int topValue = *(matrix + layer * size + element);
+    // Step 1: Transpose
+    for (int i = 0; i < size; i++) {
+        for (int j = i + 1; j < size; j++) {
+            int temp = *(matrix + i * size + j);
+            *(matrix + i * size + j) = *(matrix + j * size + i);
+            *(matrix + j * size + i) = temp;
+        }
+    }
 
-            // Move left to top
-            *(matrix + layer * size + element) = *(matrix + (size - element - 1) * size + layer);
-
-            // Move bottom to left
-            *(matrix + (size - element - 1) * size + layer) = *(matrix + (size - layer - 1) * size + (size - element - 1));
-
-            // Move right to bottom
-            *(matrix + (size - layer - 1) * size + (size - element - 1)) = *(matrix + element * size + (size - layer - 1));
-
-            // Move top (saved) to right
-            *(matrix + element * size + (size - layer - 1)) = topValue;
+    // Step 2: Reverse each row
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size / 2; j++) {
+            int temp = *(matrix + i * size + j);
+            *(matrix + i * size + j) = *(matrix + i * size + (size - j - 1));
+            *(matrix + i * size + (size - j - 1)) = temp;
         }
     }
 }
