@@ -91,12 +91,13 @@ void rotateMatrix90Clockwise(int *matrix, int size) {
 
 // Apply 3x3 smoothing filter in-place
 void smoothMatrix3x3(int *matrix, int size) {
-    int smoothed[size * size]; // temporary buffer
+    int smoothed[size * size]; 
+    int sum, neighbors;        
 
     for (int row = 0; row < size; row++) {
         for (int col = 0; col < size; col++) {
-            int sum = 0;
-            int neighbors = 0;
+            sum = 0;           // reset for each cell
+            neighbors = 0;     // reset for each cell
 
             for (int rowOffset = -1; rowOffset <= 1; rowOffset++) {
                 for (int colOffset = -1; colOffset <= 1; colOffset++) {
