@@ -51,7 +51,7 @@ void inputString(char *msg, char *str) {
     str[strcspn(str, "\n")] = '\0';
 
     while (strlen(str) == 0 || strspn(str, "0123456789") == strlen(str)) {
-        printf("Invalid name! Enter alphabets only.\n");
+        printf("Invalid name! Enter atleast one alphabet.\n");
         printf("%s", msg);
         fgets(str, NAME_LEN, stdin);
         str[strcspn(str, "\n")] = '\0';
@@ -85,21 +85,24 @@ void sortInventory() {
     }
 }
 
-int isDuplicateID(int id) {
+
+int findProductIndexByID(int id) {
     for (int i = 0; i < productCount; i++) {
-        if (inventory[i].id == id) return 1;
+        if (inventory[i].id == id) return i;
     }
-    return 0;
+    return -1;
+}
+
+int isDuplicateID(int id) {
+    return findProductIndexByID(id) != -1;
 }
 
 void addProduct() {
-    int id;
-    do {
+    int id = inputInteger("Enter Product ID: ");
+    while (isDuplicateID(id)) {
+        printf("ID already exists! Enter a different Product ID:\n");
         id = inputInteger("Enter Product ID: ");
-        if (isDuplicateID(id)) {
-            printf("ID already exists! Enter a different Product ID.\n");
-        }
-    } while (isDuplicateID(id));
+    }
 
     productCount++;
     inventory = realloc(inventory, productCount * sizeof(Product));
@@ -133,27 +136,29 @@ void viewProducts() {
 
 void updateQuantity() {
     int id = inputInteger("Enter Product ID to update quantity: ");
-    for (int i = 0; i < productCount; i++) {
-        if (inventory[i].id == id) {
-            inventory[i].quantity = inputInteger("Enter New Quantity: ");
-            printf("Quantity Updated Successfully!\n");
-            return;
-        }
+    int index = findProductIndexByID(id);
+
+    if (index == -1) {
+        printf("Product not found!\n");
+        return;
     }
-    printf("Product not found!\n");
+
+    inventory[index].quantity = inputInteger("Enter New Quantity: ");
+    printf("Quantity Updated Successfully!\n");
 }
 
 void searchByID() {
     int id = inputInteger("Enter Product ID to search: ");
-    for (int i = 0; i < productCount; i++) {
-        if (inventory[i].id == id) {
-            printf("Product Found: ID: %d | Name: %s | Price: %.2f | Qty: %d\n",
-                   inventory[i].id, inventory[i].name,
-                   inventory[i].price, inventory[i].quantity);
-            return;
-        }
+    int index = findProductIndexByID(id);
+
+    if (index == -1) {
+        printf("Product not found!\n");
+        return;
     }
-    printf("Product not found!\n");
+
+    printf("Product Found: ID: %d | Name: %s | Price: %.2f | Qty: %d\n",
+           inventory[index].id, inventory[index].name,
+           inventory[index].price, inventory[index].quantity);
 }
 
 void searchByName() {
@@ -177,6 +182,11 @@ void searchByPriceRange() {
     float min = inputFloat("Enter Minimum Price: ");
     float max = inputFloat("Enter Maximum Price: ");
 
+    while (max < min) {
+        printf("Error! Maximum price must be greater than or equal to minimum price.\n");
+        max = inputFloat("Enter Maximum Price again: ");
+    }
+
     int found = 0;
     for (int i = 0; i < productCount; i++) {
         if (inventory[i].price >= min && inventory[i].price <= max) {
@@ -186,24 +196,28 @@ void searchByPriceRange() {
             found = 1;
         }
     }
+
     if (!found) printf("No matching products found!\n");
 }
 
 void deleteProduct() {
     int id = inputInteger("Enter Product ID to delete: ");
+    int index = findProductIndexByID(id);
 
-    for (int i = 0; i < productCount; i++) {
-        if (inventory[i].id == id) {
-            for (int j = i; j < productCount - 1; j++) {
-                inventory[j] = inventory[j + 1];
-            }
-            productCount--;
-            inventory = realloc(inventory, productCount * sizeof(Product));
-            printf("Product deleted successfully!\n");
-            return;
-        }
+    if (index == -1) {
+        printf("Product not found!\n");
+        return;
     }
-    printf("Product not found!\n");
+
+    printf("Deleting %s...\n", inventory[index].name);
+
+    for (int i = index; i < productCount - 1; i++) {
+        inventory[i] = inventory[i + 1];
+    }
+
+    productCount--;
+    inventory = realloc(inventory, productCount * sizeof(Product));
+    printf("Product deleted successfully!\n");
 }
 
 int main() {
