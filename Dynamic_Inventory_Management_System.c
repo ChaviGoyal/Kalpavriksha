@@ -4,6 +4,7 @@
 #include <ctype.h>
 
 #define NAME_LEN 50
+#define MAX_PRODUCTS 100   
 
 typedef struct {
     int id;
@@ -98,6 +99,12 @@ int isDuplicateID(int id) {
 }
 
 void addProduct() {
+
+    if (productCount >= MAX_PRODUCTS) {
+        printf("Cannot add more products! (Limit reached: %d)\n", MAX_PRODUCTS);
+        return;
+    }
+
     int id = inputInteger("Enter Product ID: ");
     while (isDuplicateID(id)) {
         printf("ID already exists! Enter a different Product ID:\n");
