@@ -38,7 +38,6 @@ typedef struct {
     PlayerNode* head;
 } Team;
 
-/* ------------ FUNCTION PROTOTYPES ------------ */
 float computePerformanceIndex(int roleId, float avg, float strikeRt, int wicketCount, float ecoRate);
 void getRoleText(int roleId, char *roleText);
 
@@ -56,7 +55,6 @@ void showAllPlayersByRole(Team teams[], int roleId);
 PlayerNode* findPlayerById(Team *team, int playerId);
 void addPlayerWithValidation(Team *team);
 
-/* Input helpers */
 int readIntInRange(int min, int max, const char *prompt);
 float readFloatMin(float min, const char *prompt);
 void readValidName(char *outName);
@@ -82,7 +80,15 @@ void insertPlayerIntoTeam(Team *team, PlayerNode *node) {
     team->head = node;
     team->totalPlayers++;
 }
+int comparePlayers(const void *a, const void *b) {
+    PlayerNode *p1 = *(PlayerNode **)a;
+    PlayerNode *p2 = *(PlayerNode **)b;
 
+    // Sort in descending order of Performance Index 
+    if (p1->performanceIndex < p2->performanceIndex) return 1;
+    if (p1->performanceIndex > p2->performanceIndex) return -1;
+    return 0;
+}
 int searchTeamById(Team teams[], int id) {
     int low = 0, high = TEAM_COUNT - 1;
 
@@ -189,18 +195,22 @@ void showTeamPlayers(Team *team) {
     printf("Total Players: %d\n", team->totalPlayers);
     printf("Average Team Strike Rate: %.2f\n", team->averageTeamStrikeRate);
 }
+int compareTeams(const void *a, const void *b) {
+    const Team *t1 = (const Team *)a;
+    const Team *t2 = (const Team *)b;
 
+    // Sort in descending order of Average Strike Rate
+    if (t1->averageTeamStrikeRate < t2->averageTeamStrikeRate) return 1;
+    if (t1->averageTeamStrikeRate > t2->averageTeamStrikeRate) return -1;
+    return 0;
+}
 void showTeamsSortedByStrikeRate(Team teams[]) {
     Team sortedTeams[TEAM_COUNT];
-    memcpy(sortedTeams, teams, sizeof(sortedTeams));
 
-    for (int i = 0; i < TEAM_COUNT; i++)
-        for (int j = i + 1; j < TEAM_COUNT; j++)
-            if (sortedTeams[i].averageTeamStrikeRate < sortedTeams[j].averageTeamStrikeRate) {
-                Team tempTeam = sortedTeams[i];
-                sortedTeams[i] = sortedTeams[j];
-                sortedTeams[j] = tempTeam;
-            }
+    memcpy(sortedTeams, teams, sizeof(sortedTeams)); // Copy data
+
+    // Sort using qsort (O n log n)
+    qsort(sortedTeams, TEAM_COUNT, sizeof(Team), compareTeams);
 
     printf("\nTeams Sorted by Average Strike Rate:\n");
     printf("---------------------------------------------\n");
@@ -220,6 +230,7 @@ void showTopKPlayersInTeam(Team *team, int roleId, int K) {
     PlayerNode *playerList[200];
     int playerCount = 0;
 
+    // Collect players matching the role in the team
     PlayerNode *node = team->head;
     while (node) {
         if (node->roleId == roleId)
@@ -227,13 +238,8 @@ void showTopKPlayersInTeam(Team *team, int roleId, int K) {
         node = node->next;
     }
 
-    for (int i = 0; i < playerCount; i++)
-        for (int j = i + 1; j < playerCount; j++)
-            if (playerList[i]->performanceIndex < playerList[j]->performanceIndex) {
-                PlayerNode *swapNode = playerList[i];
-                playerList[i] = playerList[j];
-                playerList[j] = swapNode;
-            }
+    // Sort players by performance using qsort
+    qsort(playerList, playerCount, sizeof(PlayerNode *), comparePlayers);
 
     char roleText[20];
     getRoleText(roleId, roleText);
@@ -247,11 +253,9 @@ void showTopKPlayersInTeam(Team *team, int roleId, int K) {
                playerList[i]->playerName,
                playerList[i]->performanceIndex);
 }
-
 void showAllPlayersByRole(Team teams[], int roleId) {
     PlayerNode *playerList[1000];
     int playerCount = 0;
-
     for (int teamIndex = 0; teamIndex < TEAM_COUNT; teamIndex++) {
         PlayerNode *node = teams[teamIndex].head;
         while (node) {
@@ -260,21 +264,15 @@ void showAllPlayersByRole(Team teams[], int roleId) {
             node = node->next;
         }
     }
-
-    for (int i = 0; i < playerCount; i++)
-        for (int j = i + 1; j < playerCount; j++)
-            if (playerList[i]->performanceIndex < playerList[j]->performanceIndex) {
-                PlayerNode *swapNode = playerList[i];
-                playerList[i] = playerList[j];
-                playerList[j] = swapNode;
-            }
+    qsort(playerList, playerCount, sizeof(PlayerNode *), comparePlayers);
 
     char roleText[20];
     getRoleText(roleId, roleText);
 
     printf("\nAll %s(s) Across All Teams:\n", roleText);
-     printf(" ID         Name              Team        PI\n");
+    printf(" ID         Name              Team        PI\n");
     printf("---------------------------------------------\n");
+
     for (int i = 0; i < playerCount; i++)
         printf("%-5d %-25s %-15s %.2f\n",
                playerList[i]->playerId,
@@ -379,10 +377,8 @@ void addPlayerWithValidation(Team *team) {
 
     strcpy(newPlayer->teamName, team->teamName);
 
-    newPlayer->performanceIndex =
-        computePerformanceIndex(newPlayer->roleId, newPlayer->battingAverage, newPlayer->strikeRate,
+    newPlayer->performanceIndex =computePerformanceIndex(newPlayer->roleId, newPlayer->battingAverage, newPlayer->strikeRate,
                                 newPlayer->wickets, newPlayer->economyRate);
-
     newPlayer->next = NULL;
 
     insertPlayerIntoTeam(team, newPlayer);
@@ -390,7 +386,7 @@ void addPlayerWithValidation(Team *team) {
 
     printf("Player added.\n");
 }
-/* ------------ MEMORY CLEANUP FUNCTIONS ------------ */
+
 void freePlayerList(PlayerNode *head) {
     PlayerNode *temp;
     while (head != NULL) {
@@ -472,10 +468,11 @@ int main() {
             }
 
             case 6:
-              printf("Freeing memory...\n");
-              freeAllMemory(teams);
-              printf("All memory freed. Exiting...\n");
-              return 0;
+                printf("Freeing memory...\n");
+                freeAllMemory(teams);
+                printf("All memory freed. Exiting...\n");
+                return 0;
+
         }
     }
 }
