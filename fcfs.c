@@ -1,44 +1,97 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+
+#define MAX_PROCESSES 50
+#define HASH_SIZE 101
+#define MAX_KILL_EVENTS 20
 
 typedef enum {
-    READY,
-    RUNNING,
-    WAITING,
-    TERMINATED
+    STATE_READY,
+    STATE_RUNNING,
+    STATE_WAITING,
+    STATE_TERMINATED,
+    STATE_KILLED
 } ProcessState;
 
-typedef struct Process {
-    char name[50];
-    int pid;
-    int cpuBurst;
+typedef struct ProcessControlBlock {
+    char processName[20];
+    int processId;
+    int cpuBurstTime;
     int ioStartTime;
     int ioDuration;
 
-    int executedCpuTime;
-    int executedIoTime;
+    int executedTime;
+    int remainingIoTime;
     int completionTime;
 
     ProcessState state;
-    struct Process *next;
-} Process;
-
-typedef struct Queue {
-    Process *front;
-    Process *rear;
-} Queue;
+    struct ProcessControlBlock *next;
+} PCB;
 
 typedef struct {
-    int pid;
+    int processId;
     int killTime;
 } KillEvent;
 
-void initializeQueue(Queue *queue) {
+typedef struct {
+    PCB *front;
+    PCB *rear;
+} ProcessQueue;
+
+PCB *processHashTable[HASH_SIZE];
+KillEvent killEvents[MAX_KILL_EVENTS];
+int killEventCount = 0;
+int systemClock = 0;
+
+int isValidInteger(const char *str) {
+    if (*str == '\0') return 0;
+    for (int i = 0; str[i]; i++) {
+        if (!isdigit(str[i]) && !(i == 0 && str[i] == '-'))
+            return 0;
+    }
+    return 1;
+}
+
+int isValidProcessName(const char *name) {
+    if (*name == '\0') return 0;
+    for (int i = 0; name[i]; i++) {
+        if (!isalpha(name[i]) && name[i] != '_')
+            return 0;
+    }
+    return 1;
+}
+
+int hashFunction(int processId) {
+    return processId % HASH_SIZE;
+}
+
+PCB* findProcessById(int processId) {
+    PCB *current = processHashTable[hashFunction(processId)];
+    while (current) {
+        if (current->processId == processId)
+            return current;
+        current = current->next;
+    }
+    return NULL;
+}
+
+void insertProcess(PCB *process) {
+    int index = hashFunction(process->processId);
+    process->next = processHashTable[index];
+    processHashTable[index] = process;
+}
+
+void initializeQueue(ProcessQueue *queue) {
     queue->front = queue->rear = NULL;
 }
 
-void enqueue(Queue *queue, Process *process) {
+int isQueueEmpty(ProcessQueue *queue) {
+    return queue->front == NULL;
+}
+
+void enqueueProcess(ProcessQueue *queue, PCB *process) {
     process->next = NULL;
     if (!queue->rear) {
         queue->front = queue->rear = process;
@@ -48,179 +101,237 @@ void enqueue(Queue *queue, Process *process) {
     }
 }
 
-Process* dequeue(Queue *queue) {
-    if (!queue->front) return NULL;
-    Process *p = queue->front;
-    queue->front = queue->front->next;
+PCB* dequeueProcess(ProcessQueue *queue) {
+    if (isQueueEmpty(queue)) return NULL;
+    PCB *process = queue->front;
+    queue->front = process->next;
     if (!queue->front) queue->rear = NULL;
-    p->next = NULL;
-    return p;
+    process->next = NULL;
+    return process;
 }
 
-int isQueueEmpty(Queue *queue) {
-    return queue->front == NULL;
+void removeProcessFromQueue(ProcessQueue *queue, PCB *process) {
+    PCB *current = queue->front;
+    PCB *previous = NULL;
+
+    while (current) {
+        if (current == process) {
+            if (previous)
+                previous->next = current->next;
+            else
+                queue->front = current->next;
+
+            if (current == queue->rear)
+                queue->rear = previous;
+
+            current->next = NULL;
+            return;
+        }
+        previous = current;
+        current = current->next;
+    }
+}
+
+void updateWaitingProcesses(ProcessQueue *waitingQueue, ProcessQueue *readyQueue) {
+    PCB *current = waitingQueue->front;
+    PCB *previous = NULL;
+
+    while (current) {
+        current->remainingIoTime--;
+        if (current->remainingIoTime == 0) {
+            PCB *completedIoProcess = current;
+            completedIoProcess->state = STATE_READY;
+
+            if (previous)
+                previous->next = current->next;
+            else
+                waitingQueue->front = current->next;
+
+            if (current == waitingQueue->rear)
+                waitingQueue->rear = previous;
+
+            current = current->next;
+            enqueueProcess(readyQueue, completedIoProcess);
+        } else {
+            previous = current;
+            current = current->next;
+        }
+    }
+}
+
+void processKillEvents(int currentTime, ProcessQueue *readyQueue,
+                       ProcessQueue *waitingQueue, PCB **runningProcess) {
+    for (int i = 0; i < killEventCount; i++) {
+        if (killEvents[i].killTime == currentTime) {
+            PCB *process = findProcessById(killEvents[i].processId);
+            if (!process || process->state == STATE_TERMINATED || process->state == STATE_KILLED)
+                continue;
+
+            process->state = STATE_KILLED;
+            process->completionTime = currentTime;
+
+            removeProcessFromQueue(readyQueue, process);
+            removeProcessFromQueue(waitingQueue, process);
+
+            if (*runningProcess == process)
+                *runningProcess = NULL;
+        }
+    }
 }
 
 int main() {
-    int numberOfProcesses;
-    printf("Enter number of processes:\n");
-    scanf("%d", &numberOfProcesses);
-
-    Queue readyQueue, waitingQueue, terminatedQueue;
+    ProcessQueue readyQueue, waitingQueue;
     initializeQueue(&readyQueue);
     initializeQueue(&waitingQueue);
-    initializeQueue(&terminatedQueue);
 
-    Process *processList[numberOfProcesses];
+    PCB *allProcesses[MAX_PROCESSES];
+    char inputBuffer[32];
+    int processCount;
 
-    printf("\nEnter: name pid cpuBurst ioStart ioDuration\n");
-    for (int i = 0; i < numberOfProcesses; i++) {
-        Process *p = malloc(sizeof(Process));
-        scanf("%s %d %d %d %d",
-              p->name, &p->pid, &p->cpuBurst,
-              &p->ioStartTime, &p->ioDuration);
+    printf("Enter number of processes: ");
+    scanf("%s", inputBuffer);
 
-        p->executedCpuTime = 0;
-        p->executedIoTime = -1; 
-        p->completionTime = 0;
-        p->state = READY;
-        p->next = NULL;
-
-        processList[i] = p;
-        enqueue(&readyQueue, p);
+    if (!isValidInteger(inputBuffer)) {
+        printf("ERROR: Invalid process count\n");
+        return 0;
     }
 
-    int numberOfKillEvents;
-    printf("\nEnter number of kill events:\n");
-    scanf("%d", &numberOfKillEvents);
+    processCount = atoi(inputBuffer);
 
-    KillEvent killEvents[numberOfKillEvents];
-    if (numberOfKillEvents > 0)
-        printf("Enter kill events: pid killTime\n");
-    for (int i = 0; i < numberOfKillEvents; i++)
-        scanf("%d %d", &killEvents[i].pid, &killEvents[i].killTime);
+    if (processCount <= 0 || processCount > MAX_PROCESSES) {
+        printf("ERROR: Process count out of range\n");
+        return 0;
+    }
 
-    Process *runningProcess = NULL;
-    int currentTime = 0;
+    for (int i = 0; i < processCount; i++) {
+        PCB *process = malloc(sizeof(PCB));
+        char pidStr[16], cpuStr[16], ioStartStr[16], ioDurStr[16];
 
-    printf("\n--------------- Execution Log ---------------\n");
+        printf("Enter <name pid cpu_burst io_start io_duration>: ");
+        scanf("%s %s %s %s %s",
+              process->processName, pidStr, cpuStr, ioStartStr, ioDurStr);
 
-    while (1) {
-
-        for (int idx = 0; idx < numberOfKillEvents; idx++) {
-            if (killEvents[idx].killTime == currentTime) {
-                for (int val = 0; val < numberOfProcesses; val++) {
-                    Process *p = processList[val];
-                    if (p->pid == killEvents[idx].pid &&
-                        p->state != TERMINATED) {
-
-                        p->state = TERMINATED;
-                        p->completionTime = currentTime;
-                        enqueue(&terminatedQueue, p);
-
-                        printf("[Time=%d] Process %s (%d) terminated by kill\n",
-                               currentTime, p->name, p->pid);
-
-                        if (runningProcess == p)
-                            runningProcess = NULL;
-                    }
-                }
-            }
+        if (!isValidProcessName(process->processName)) {
+            printf("ERROR: Invalid process name\n");
+            return 0;
         }
 
-        if (runningProcess && runningProcess->state == RUNNING) {
-            runningProcess->executedCpuTime++;
+        if (!isValidInteger(pidStr) || !isValidInteger(cpuStr) ||
+            !isValidInteger(ioStartStr) || !isValidInteger(ioDurStr)) {
+            printf("ERROR: Numeric fields must be integers\n");
+            return 0;
+        }
 
-            if (runningProcess->executedCpuTime == runningProcess->ioStartTime
-                && runningProcess->ioDuration > 0) {
+        process->processId = atoi(pidStr);
+        process->cpuBurstTime = atoi(cpuStr);
+        process->ioStartTime = atoi(ioStartStr);
+        process->ioDuration = atoi(ioDurStr);
 
-                runningProcess->state = WAITING;
-                runningProcess->executedIoTime = -1; 
+        if (findProcessById(process->processId)) {
+            printf("ERROR: Duplicate process ID %d\n", process->processId);
+            return 0;
+        }
 
-                enqueue(&waitingQueue, runningProcess);
+        if (process->cpuBurstTime <= 0 || process->ioDuration < 0) {
+            printf("ERROR: Invalid CPU or IO values\n");
+            return 0;
+        }
 
-                printf("[Time=%d] Process %s moved to I/O\n",
-                       currentTime, runningProcess->name);
+        if (process->ioDuration > 0 &&
+            (process->ioStartTime <= 0 || process->ioStartTime >= process->cpuBurstTime)) {
+            printf("ERROR: Invalid IO start time\n");
+            return 0;
+        }
 
+        process->executedTime = 0;
+        process->remainingIoTime = process->ioDuration;
+        process->state = STATE_READY;
+        process->next = NULL;
+
+        insertProcess(process);
+        enqueueProcess(&readyQueue, process);
+        allProcesses[i] = process;
+    }
+
+    printf("Enter number of KILL events: ");
+    scanf("%s", inputBuffer);
+
+    if (!isValidInteger(inputBuffer)) {
+        printf("ERROR: Invalid kill event count\n");
+        return 0;
+    }
+
+    killEventCount = atoi(inputBuffer);
+
+    for (int i = 0; i < killEventCount; i++) {
+        char pidStr[16], timeStr[16];
+        printf("Enter KILL <pid time>: ");
+        scanf("%s %s", pidStr, timeStr);
+
+        if (!isValidInteger(pidStr) || !isValidInteger(timeStr)) {
+            printf("ERROR: Invalid KILL input\n");
+            return 0;
+        }
+
+        killEvents[i].processId = atoi(pidStr);
+        killEvents[i].killTime = atoi(timeStr);
+
+        if (!findProcessById(killEvents[i].processId) || killEvents[i].killTime < 0) {
+            printf("ERROR: Invalid KILL event\n");
+            return 0;
+        }
+    }
+
+    PCB *runningProcess = NULL;
+
+    while (!isQueueEmpty(&readyQueue) || !isQueueEmpty(&waitingQueue) || runningProcess) {
+        processKillEvents(systemClock, &readyQueue, &waitingQueue, &runningProcess);
+        systemClock++;
+        updateWaitingProcesses(&waitingQueue, &readyQueue);
+
+        if (!runningProcess && !isQueueEmpty(&readyQueue)) {
+            runningProcess = dequeueProcess(&readyQueue);
+            runningProcess->state = STATE_RUNNING;
+        }
+
+        if (runningProcess) {
+            runningProcess->executedTime++;
+
+            if (runningProcess->ioDuration > 0 &&
+                runningProcess->executedTime == runningProcess->ioStartTime) {
+                runningProcess->state = STATE_WAITING;
+                runningProcess->remainingIoTime = runningProcess->ioDuration;
+                enqueueProcess(&waitingQueue, runningProcess);
                 runningProcess = NULL;
             }
-            else if (runningProcess->executedCpuTime >= runningProcess->cpuBurst) {
-                runningProcess->state = TERMINATED;
-                runningProcess->completionTime = currentTime;
-                enqueue(&terminatedQueue, runningProcess);
-
-                printf("[Time=%d] Process %s completed execution\n",
-                       currentTime, runningProcess->name);
-
+            else if (runningProcess->executedTime == runningProcess->cpuBurstTime) {
+                runningProcess->state = STATE_TERMINATED;
+                runningProcess->completionTime = systemClock;
                 runningProcess = NULL;
             }
         }
-
-        Process *prev = NULL, *cur = waitingQueue.front;
-
-        while (cur) {
-            cur->executedIoTime++;
-
-            if (cur->executedIoTime >= cur->ioDuration) {
-                cur->state = READY;
-
-                printf("[Time=%d] I/O completed for: %s\n",
-                       currentTime, cur->name);
-
-                Process *done = cur;
-                if (!prev) waitingQueue.front = cur->next;
-                else prev->next = cur->next;
-
-                if (cur == waitingQueue.rear)
-                    waitingQueue.rear = prev;
-
-                enqueue(&readyQueue, done);
-
-                cur = (!prev) ? waitingQueue.front : prev->next;
-                continue;
-            }
-
-            prev = cur;
-            cur = cur->next;
-        }
-
-        if (!runningProcess) {
-            runningProcess = dequeue(&readyQueue);
-
-            if (runningProcess && runningProcess->state != TERMINATED) {
-                runningProcess->state = RUNNING;
-                printf("[Time=%d] Running: %s (%d)\n",
-                       currentTime, runningProcess->name, runningProcess->pid);
-            }
-        }
-
-        currentTime++;
-
-        if (!runningProcess &&
-            isQueueEmpty(&readyQueue) &&
-            isQueueEmpty(&waitingQueue))
-            break;
     }
 
-    printf("\n-------- Final Scheduling Result --------\n");
-    printf("PID     Name    CPU     IO      TAT     Waiting\n");
+    printf("\nPID\tName\tCPU\tIO\tStatus\tTurnaround\tWaiting\n");
 
-    Process *p = terminatedQueue.front;
-    while (p) {
-        int tat = p->completionTime;
-        int waiting = tat - p->cpuBurst - p->ioDuration;
-        if (waiting < 0) waiting = 0;
+    for (int i = 0; i < processCount; i++) {
+        PCB *process = allProcesses[i];
 
-        printf("%d\t%s\t%d\t%d\t%d\t%d\n",
-               p->pid, p->name,
-               p->cpuBurst,
-               p->ioDuration,
-               tat,
-               waiting);
+        if (process->state == STATE_KILLED) {
+            printf("%d\t%s\t%d\t%d\tKILLED@%d\t-\t-\n",
+                   process->processId, process->processName,
+                   process->cpuBurstTime, process->ioDuration,
+                   process->completionTime);
+        } else {
+            int turnaroundTime = process->completionTime;
+            int waitingTime = turnaroundTime - process->cpuBurstTime - process->ioDuration;
 
-        p = p->next;
+            printf("%d\t%s\t%d\t%d\tOK\t%d\t\t%d\n",
+                   process->processId, process->processName,
+                   process->cpuBurstTime, process->ioDuration,
+                   turnaroundTime, waitingTime);
+        }
     }
-    printf("-----------------------------------------\n");
 
     return 0;
 }
